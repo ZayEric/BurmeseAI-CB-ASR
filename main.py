@@ -4,19 +4,11 @@ import threading
 import time
 from threading import Lock
 from flask import Flask, request, jsonify
-import tempfile
 from google.cloud import storage
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import torch
-from transformers import (
-    pipeline,
-    AutoTokenizer,
-    AutoModelForSeq2SeqLM
-)
-
-# audio libs used only by speech endpoints (keep if you need them)
-import requests
+from transformers import pipeline, AutoProcessor, AutoModelForSpeechSeq2Seq
 import base64
 import io
 import soundfile as sf
@@ -29,25 +21,20 @@ os.makedirs(WORKSPACE, exist_ok=True)
 
 ASR_BUCKET = "speechtotext-model-bucket"
 ASR_PREFIX = "model/finetuned-seamlessm4t-burmese"
-QA_BUCKET = "qa-model-bucket"
-QA_PREFIX = "model/finetuned-qa-burmese"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 asr_lock = Lock()
-qa_lock = Lock()
 
-# global model objects + state flags
-qa_pipe = None
-qa_model = None
-qa_tokenizer = None
+# Global model objects + flags
+asr_pipe = None
 model_loading = False
 model_ready = False
 model_load_error = None
 
-# ---------- download helper (parallel) ----------
+# ---------- Helper: parallel GCS download ----------
 def download_from_gcs(bucket_name, prefix, local_dir, max_workers=8):
     client = storage.Client()
     bucket = client.bucket(bucket_name)
@@ -79,52 +66,59 @@ def download_from_gcs(bucket_name, prefix, local_dir, max_workers=8):
 
     logger.info("✅ Finished downloading %d files from gs://%s/%s", len(blobs), bucket_name, prefix)
 
-# ---------- QA loader (memory-friendly) ----------
-def load_qa_model(local_path):
-    global qa_pipe, qa_model, qa_tokenizer
-    # Use memory-saving options. device_map="auto" lets accelerate/offload if available.
-    logger.info("Loading QA tokenizer/model from %s", local_path)
-    qa_tokenizer = AutoTokenizer.from_pretrained(local_path, use_fast=False)
-    qa_model = AutoModelForSeq2SeqLM.from_pretrained(
+# ---------- Load ASR Model ----------
+def load_asr_model(local_path):
+    global asr_pipe
+    logger.info("Loading ASR model from %s", local_path)
+
+    processor = AutoProcessor.from_pretrained(local_path)
+    model = AutoModelForSpeechSeq2Seq.from_pretrained(
         local_path,
-        device_map="auto",
         torch_dtype=torch.float16,
+        device_map="auto",
         low_cpu_mem_usage=True
     )
-    qa_pipe = pipeline("text2text-generation", model=qa_model, tokenizer=qa_tokenizer)
-    logger.info("✅ QA model loaded into memory")
+
+    asr_pipe = pipeline(
+        "automatic-speech-recognition",
+        model=model,
+        tokenizer=processor.tokenizer,
+        feature_extractor=processor.feature_extractor
+    )
+    logger.info("✅ ASR model loaded successfully")
 
 # ---------- Background preload ----------
-def preload_models_background():
+def preload_asr_background():
     global model_loading, model_ready, model_load_error
-    with qa_lock:
+    with asr_lock:
         if model_ready or model_loading:
             return
         model_loading = True
 
     try:
         start = time.time()
-        # download QA model files to cache
-        local_qa_dir = os.path.join(WORKSPACE, "qa")
-        if not os.path.exists(local_qa_dir) or not os.listdir(local_qa_dir):
-            logger.info("⬇️ Downloading QA model from GCS to %s", local_qa_dir)
-            download_from_gcs(QA_BUCKET, QA_PREFIX, local_qa_dir, max_workers=8)
-        else:
-            logger.info("QA files already present at %s", local_qa_dir)
+        local_asr_dir = os.path.join(WORKSPACE, "asr")
 
-        # load model (memory-friendly)
-        load_qa_model(local_qa_dir)
+        # Download model if missing
+        if not os.path.exists(local_asr_dir) or not os.listdir(local_asr_dir):
+            logger.info("⬇️ Downloading ASR model from GCS to %s", local_asr_dir)
+            download_from_gcs(ASR_BUCKET, ASR_PREFIX, local_asr_dir, max_workers=8)
+        else:
+            logger.info("ASR model already present at %s", local_asr_dir)
+
+        # Load into memory
+        load_asr_model(local_asr_dir)
         model_ready = True
-        logger.info("Model ready (preload took %.1f s)", time.time() - start)
+        logger.info("✅ ASR model ready (preload took %.1f s)", time.time() - start)
+
     except Exception as e:
         model_load_error = str(e)
-        logger.exception("Failed to preload model: %s", e)
+        logger.exception("❌ Failed to preload ASR model: %s", e)
     finally:
         model_loading = False
 
-# Kick off preload in a daemon thread at process start
 def start_preload_thread():
-    t = threading.Thread(target=preload_models_background, daemon=True)
+    t = threading.Thread(target=preload_asr_background, daemon=True)
     t.start()
     return t
 
@@ -137,39 +131,40 @@ def healthz():
     status = "ready" if model_ready else ("loading" if model_loading else "not_loaded")
     return jsonify({"status": status}), 200 if model_ready else 503
 
-@app.route("/textqa", methods=["POST"])
-def textqa():
+@app.route("/speech2text", methods=["POST"])
+def speech2text():
     if not model_ready:
-        # short-circuit: model still loading
-        return jsonify({"error": "model loading", "loading": model_loading, "error_details": model_load_error}), 503
+        return jsonify({
+            "error": "model loading",
+            "loading": model_loading,
+            "error_details": model_load_error
+        }), 503
 
     data = request.get_json(silent=True) or {}
-    question = data.get("text") or data.get("question") or ""
-    if not question:
-        return jsonify({"error": "missing 'text' or 'question'"}), 400
+    audio_b64 = data.get("audio_base64")
+    fmt = data.get("format", "wav")
+
+    if not audio_b64:
+        return jsonify({"error": "missing 'audio_base64'"}), 400
 
     try:
-        # run qa via the pipeline
-        result = qa_pipe(f"question: {question}\nAnswer:")
-        # pipeline returns list of dicts; check shape
-        answer = result[0].get("generated_text") if isinstance(result, list) else result.get("generated_text")
-        return jsonify({"answer": answer})
+        audio_bytes = base64.b64decode(audio_b64)
+        audio = AudioSegment.from_file(io.BytesIO(audio_bytes), format=fmt)
+        with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
+            audio.export(tmp.name, format="wav")
+            text = asr_pipe(tmp.name)["text"]
+
+        return jsonify({"text": text})
     except Exception as e:
-        logger.exception("Error running QA")
+        logger.exception("ASR processing failed")
         return jsonify({"error": str(e)}), 500
 
-# other endpoints (asr/speechqa) should also check model_ready similarly before using QA model
-
+# ---------- Entrypoint ----------
 if __name__ == "__main__":
-    # log device & memory
     if torch.cuda.is_available():
-        try:
-            logger.info("🔥 GPU available: %s", torch.cuda.get_device_name(0))
-        except Exception:
-            logger.info("🔥 GPU available")
+        logger.info("🔥 GPU available: %s", torch.cuda.get_device_name(0))
     else:
         logger.warning("⚠️ GPU not available — using CPU")
 
-    logger.info("Starting Flask (dev) on 0.0.0.0:8080 — preloading models in background")
-    # NOTE: in production run with gunicorn as shown below in Dockerfile recommendations
+    logger.info("Starting ASR Flask app on 0.0.0.0:8080 (model preloading in background)")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
