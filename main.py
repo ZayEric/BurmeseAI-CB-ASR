@@ -74,8 +74,8 @@ def load_asr_model(local_path):
     processor = AutoProcessor.from_pretrained(local_path)
     model = AutoModelForSpeechSeq2Seq.from_pretrained(
         local_path,
-        torch_dtype=torch.float16,
-        device_map="auto",
+        torch_dtype=torch.float32,
+        device_map=None,
         low_cpu_mem_usage=True
     )
 
