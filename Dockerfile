@@ -29,6 +29,9 @@ RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 
 COPY . .
 
+# ===== PRELOAD MODEL INTO IMAGE =====
+# Copy pre-downloaded ASR model into the image
+COPY model/finetuned-seamlessm4t-burmese /workspace/hf_cache/asr
 
 EXPOSE 8080
 # single process, threaded worker — adjust threads/workers to your CPU & memory
