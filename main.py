@@ -95,22 +95,32 @@ def preload_asr_background():
             return
         model_loading = True
 
+#    try:
+#        start = time.time()
+#        local_asr_dir = os.path.join(WORKSPACE, "asr")
+
+        # Download model if missing
+#        if not os.path.exists(local_asr_dir) or not os.listdir(local_asr_dir):
+#            logger.info("⬇️ Downloading ASR model from GCS to %s", local_asr_dir)
+#            download_from_gcs(ASR_BUCKET, ASR_PREFIX, local_asr_dir, max_workers=8)
+#        else:
+#            logger.info("ASR model already present at %s", local_asr_dir)
+
+        # Load into memory
+#        load_asr_model(local_asr_dir)
+#        model_ready = True
+#        logger.info("✅ ASR model ready (preload took %.1f s)", time.time() - start)
+
+#    except Exception as e:
+#        model_load_error = str(e)
+#        logger.exception("❌ Failed to preload ASR model: %s", e)
     try:
         start = time.time()
         local_asr_dir = os.path.join(WORKSPACE, "asr")
-
-        # Download model if missing
-        if not os.path.exists(local_asr_dir) or not os.listdir(local_asr_dir):
-            logger.info("⬇️ Downloading ASR model from GCS to %s", local_asr_dir)
-            download_from_gcs(ASR_BUCKET, ASR_PREFIX, local_asr_dir, max_workers=8)
-        else:
-            logger.info("ASR model already present at %s", local_asr_dir)
-
-        # Load into memory
+        logger.info("Loading pre-baked ASR model from %s", local_asr_dir)
         load_asr_model(local_asr_dir)
         model_ready = True
         logger.info("✅ ASR model ready (preload took %.1f s)", time.time() - start)
-
     except Exception as e:
         model_load_error = str(e)
         logger.exception("❌ Failed to preload ASR model: %s", e)
