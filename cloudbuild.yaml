@@ -7,15 +7,12 @@ steps:
       - '-c'
       - |
         echo "⬇️ Downloading ASR model from GCS..."
-        mkdir -p model/finetuned-seamlessm4t-burmese
-        gsutil -m cp -r gs://speechtotext-model-bucket/model/finetuned-seamlessm4t-burmese/* model/finetuned-seamlessm4t-burmese/
+        mkdir -p ./model/finetuned-seamlessm4t-burmese
+        gsutil -m cp -r gs://speechtotext-model-bucket/model/finetuned-seamlessm4t-burmese/* ./model/finetuned-seamlessm4t-burmese/
         echo "✅ Model copied successfully!"
-    # Save the model directory as an artifact for next step
-    volumes:
-      - name: 'model-cache'
-        path: '/workspace/model'
+        ls -lh ./model/finetuned-seamlessm4t-burmese | head
 
-  # Step 2: Build Docker image, with access to model
+  # Step 2: Build Docker image
   - name: 'gcr.io/cloud-builders/docker'
     id: 'build-image'
     args:
@@ -23,10 +20,6 @@ steps:
       - '-t'
       - 'gcr.io/$PROJECT_ID/burmese-asr'
       - '.'
-    volumes:
-      - name: 'model-cache'
-        path: '/workspace/model'
 
 images:
   - 'gcr.io/$PROJECT_ID/burmese-asr'
-
