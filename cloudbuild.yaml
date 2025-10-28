@@ -1,6 +1,7 @@
 steps:
-  # Step 1: Download your model from GCS into the build context
+  # Step 1: Download model from GCS
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'download-model'
     entrypoint: 'bash'
     args:
       - '-c'
@@ -9,10 +10,23 @@ steps:
         mkdir -p model/finetuned-seamlessm4t-burmese
         gsutil -m cp -r gs://speechtotext-model-bucket/model/finetuned-seamlessm4t-burmese/* model/finetuned-seamlessm4t-burmese/
         echo "✅ Model copied successfully!"
+    # Save the model directory as an artifact for next step
+    volumes:
+      - name: 'model-cache'
+        path: '/workspace/model'
 
-  # Step 2: Build your Docker image with the model included
+  # Step 2: Build Docker image, with access to model
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/burmese-asr', '.']
+    id: 'build-image'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/burmese-asr'
+      - '.'
+    volumes:
+      - name: 'model-cache'
+        path: '/workspace/model'
 
 images:
   - 'gcr.io/$PROJECT_ID/burmese-asr'
+
