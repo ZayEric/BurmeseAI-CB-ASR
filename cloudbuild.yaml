@@ -15,7 +15,6 @@ steps:
   # Step 2: Build Docker image with /workspace as context
   - name: 'gcr.io/cloud-builders/docker'
     id: 'build-image'
-    dir: '/workspace'   # <-- Use /workspace as build context
     args:
       - 'build'
       - '-t'
