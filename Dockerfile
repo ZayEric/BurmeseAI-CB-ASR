@@ -30,7 +30,7 @@ RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 COPY . .
 
 # ===== PRELOAD MODEL INTO IMAGE =====
-COPY model/finetuned-seamlessm4t-burmese /workspace/hf_cache/asr
+COPY ./model/finetuned-seamlessm4t-burmese /workspace/hf_cache/asr
 
 
 EXPOSE 8080
