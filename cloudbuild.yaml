@@ -1,5 +1,4 @@
 steps:
-  # Step 1: Download model from GCS
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'download-model'
     entrypoint: 'bash'
@@ -9,15 +8,22 @@ steps:
         echo "⬇️ Downloading ASR model from GCS..."
         mkdir -p /workspace/model/finetuned-seamlessm4t-burmese
         gsutil -m cp -r gs://speechtotext-model-bucket/model/finetuned-seamlessm4t-burmese/* /workspace/model/finetuned-seamlessm4t-burmese/
+        echo "✅ Model downloaded into /workspace/model"
         ls -lh /workspace/model/finetuned-seamlessm4t-burmese
-        echo "✅ Model... downloaded into /workspace/model"
 
-  # Step 2: Build Docker image with /workspace as context (includes model)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'verify-model'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - 'echo "🕵️ Checking model before build..." && ls -R /workspace/model'
+
   - name: 'gcr.io/cloud-builders/docker'
     id: 'build-image'
     dir: '/workspace'
     args:
       - 'build'
+      - '--progress=plain'
       - '-t'
       - 'gcr.io/$PROJECT_ID/burmese-asr'
       - '-f'
