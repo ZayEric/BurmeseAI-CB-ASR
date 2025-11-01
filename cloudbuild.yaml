@@ -1,5 +1,5 @@
 steps:
-  # Step 1: Download model from GCS to /workspace
+  # Step 1: Download model from GCS
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'download-model'
     entrypoint: 'bash'
@@ -10,18 +10,19 @@ steps:
         mkdir -p /workspace/model/finetuned-seamlessm4t-burmese
         gsutil -m cp -r gs://speechtotext-model-bucket/model/finetuned-seamlessm4t-burmese/* /workspace/model/finetuned-seamlessm4t-burmese/
         ls -lh /workspace/model/finetuned-seamlessm4t-burmese
-        echo "✅ Model downloaded into /workspace/model"
+        echo "✅ Model... downloaded into /workspace/model"
 
-  # Step 2: Build Docker image with /workspace as context
+  # Step 2: Build Docker image with /workspace as context (includes model)
   - name: 'gcr.io/cloud-builders/docker'
     id: 'build-image'
+    dir: '/workspace'
     args:
       - 'build'
       - '-t'
       - 'gcr.io/$PROJECT_ID/burmese-asr'
+      - '-f'
+      - 'Dockerfile'
       - '.'
 
 images:
   - 'gcr.io/$PROJECT_ID/burmese-asr'
-
-
