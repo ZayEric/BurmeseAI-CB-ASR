@@ -47,14 +47,25 @@ def speech2text():
             fmt = content_type.split("/")[-1]
             logger.info("Received raw audio stream (%s, %d bytes)", fmt, len(audio_bytes))
 
-        # ✅ Case 3: JSON with base64
+        # ✅ Case 3: JSON with base64 or URL
         else:
             data = request.get_json(silent=True) or {}
             audio_b64 = data.get("audio_base64")
+            audio_url = data.get("url")
             fmt = data.get("format", "wav")
-            if not audio_b64:
-                return jsonify({"error": "missing 'audio_base64'"}), 400
-            audio_bytes = base64.b64decode(audio_b64)
+
+            if audio_url:
+                logger.info(f"📥 Downloading audio from URL: {audio_url}")
+                resp = requests.get(audio_url)
+                if resp.status_code != 200:
+                    return jsonify({"error": f"Failed to download audio from URL ({resp.status_code})"}), 400
+                audio_bytes = resp.content
+                logger.info("Downloaded %d bytes from URL", len(audio_bytes))
+            elif audio_b64:
+                audio_bytes = base64.b64decode(audio_b64)
+                logger.info("Decoded base64 audio (%d bytes)", len(audio_bytes))
+            else:
+                return jsonify({"error": "missing 'audio_base64' or 'url'"}), 400
 
         # ✅ Convert to WAV (Vertex expects normalized WAV)
         audio = AudioSegment.from_file(io.BytesIO(audio_bytes), format=fmt)
