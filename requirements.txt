@@ -1,10 +1,4 @@
-flask
-gunicorn
-google-cloud-storage
-ffmpeg-python
-requests
-sentencepiece
-soundfile
-transformers>=4.40.0
+google-cloud-aiplatform
 pydub
-accelerate>=0.33.0
+Flask
+gunicorn
