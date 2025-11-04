@@ -3,6 +3,7 @@ import io
 import logging
 import base64
 import tempfile
+import requests
 from flask import Flask, request, jsonify
 from google.cloud import aiplatform
 from pydub import AudioSegment
@@ -31,8 +32,10 @@ def healthz():
 def speech2text():
     try:
         content_type = request.headers.get("Content-Type", "")
+        audio_bytes = None
+        fmt = "wav"
 
-        # ✅ Case 1: multipart/form-data (Postman or Chatrace)
+        # ✅ Case 1: multipart/form-data (Postman or Chatrace upload)
         if "multipart/form-data" in content_type:
             file = request.files.get("file")
             if not file:
