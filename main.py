@@ -7,7 +7,7 @@ import tempfile
 from pydub import AudioSegment
 
 # ---------- CONFIG ----------
-VERTEX_ENDPOINT_ID = os.getenv("VERTEX_ENDPOINT_ID")  # e.g. projects/123/locations/us-central1/endpoints/456
+VERTEX_ENDPOINT_ID = os.getenv("us-central1-prediction-aiplatform.googleapis.com/v1/projects/burmese-voice/locations/us-central1/endpoints/7279126516179402752")  # e.g. projects/123/locations/us-central1/endpoints/456
 PROJECT_ID = os.getenv("PROJECT_ID")
 REGION = os.getenv("REGION", "us-central1")
 
