@@ -56,22 +56,22 @@ def speech2text():
         fmt = "wav"
         audio_bytes = None
 
-        # ✅ Case 1: multipart/form-data (Postman or Chatrace upload)
+        # Case 1: multipart/form-data
         if "multipart/form-data" in content_type:
             file = request.files.get("file")
             if not file:
                 return jsonify({"error": "Missing uploaded file"}), 400
             fmt = file.filename.split(".")[-1].lower()
             audio_bytes = file.read()
-            logger.info("Received multipart file: %s (%d bytes)", file.filename, len(audio_bytes))
+            logger.info("📁 Multipart file: %s (%d bytes)", file.filename, len(audio_bytes))
 
-        # ✅ Case 2: raw binary (audio/wav, audio/m4a)
+        # Case 2: raw binary
         elif content_type.startswith("audio/"):
             fmt = content_type.split("/")[-1]
             audio_bytes = request.data
-            logger.info("Received raw audio stream (%s, %d bytes)", fmt, len(audio_bytes))
+            logger.info("📡 Raw audio stream (%s, %d bytes)", fmt, len(audio_bytes))
 
-        # ✅ Case 3: JSON body with base64 or remote URL
+        # Case 3: JSON base64 or URL
         else:
             data = request.get_json(silent=True) or {}
             fmt = data.get("format", "m4a")
@@ -79,19 +79,17 @@ def speech2text():
             audio_url = data.get("url")
 
             if audio_url:
-                logger.info(f"📥 Downloading audio from URL: {audio_url}")
+                logger.info(f"🌐 Downloading from URL: {audio_url}")
                 resp = requests.get(audio_url)
                 if resp.status_code != 200:
                     return jsonify({"error": f"Failed to download audio from URL ({resp.status_code})"}), 400
                 audio_bytes = resp.content
-                logger.info("Downloaded %d bytes from URL", len(audio_bytes))
             elif audio_b64:
                 audio_bytes = base64.b64decode(audio_b64)
-                logger.info("Decoded base64 audio (%d bytes)", len(audio_bytes))
             else:
                 return jsonify({"error": "Missing 'audio_base64' or 'url'"}), 400
 
-        # ✅ Step 4: Convert to normalized WAV (Vertex expects .wav)
+        # Convert input to WAV at 16 kHz mono
         with tempfile.NamedTemporaryFile(suffix=f".{fmt}", delete=False) as tmp_in:
             tmp_in.write(audio_bytes)
             tmp_in_path = tmp_in.name
@@ -100,29 +98,29 @@ def speech2text():
             tmp_out_path = tmp_out.name
 
         try:
-            # Convert input file → WAV using pydub
             audio = AudioSegment.from_file(tmp_in_path, format=fmt)
+            # 🔥 Force 16 kHz mono conversion
+            audio = audio.set_frame_rate(16000).set_channels(1)
             audio.export(tmp_out_path, format="wav")
-            logger.info("Converted %s → WAV", fmt)
+            logger.info("🎵 Converted %s → 16 kHz mono WAV", fmt)
         except Exception as e:
-            logger.warning("⚠️ Fallback to raw bytes as WAV: %s", e)
+            logger.warning("⚠️ Conversion fallback: %s", e)
             tmp_out_path = tmp_in_path
 
-        # ✅ Read final WAV bytes and encode to base64
+        # Encode to base64
         with open(tmp_out_path, "rb") as f:
             content = base64.b64encode(f.read()).decode("utf-8")
 
-        # ✅ Clean up temp files
-        os.remove(tmp_in_path)
-        if os.path.exists(tmp_out_path) and tmp_out_path != tmp_in_path:
-            os.remove(tmp_out_path)
+        # Clean up
+        for path in [tmp_in_path, tmp_out_path]:
+            if os.path.exists(path):
+                os.remove(path)
 
-        # ✅ Send to Vertex endpoint
+        # Send to Vertex endpoint
         instance = {"audio_base64": content, "src_lang": "mya", "tgt_lang": "mya"}
         response = endpoint.predict(instances=[instance])
-        logger.info("Vertex response received")
+        logger.info("✅ Vertex response received")
 
-        # ✅ Extract and return predictions
         return jsonify({
             "status": "success",
             "predictions": response.predictions
